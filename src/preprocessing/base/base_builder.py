@@ -65,21 +65,65 @@ def merge_data(
 
 def remove_high_null_columns(
     df: pd.DataFrame,
-    threshold: float
+    threshold: float = NULL_THRESHOLD
 ) -> pd.DataFrame:
     """
-    TODO: Remove columns where null percentage exceeds the threshold.
+    Remove columns where the percentage of missing values exceeds the threshold.
 
     Args:
         df:        Input DataFrame
-        threshold: Null percentage threshold (default from config = 0.80)
+        threshold: Drop columns with null % above this value (default 0.80 = 80%)
 
     Returns:
         DataFrame with high-null columns removed
+
+    Raises:
+        ValueError: If threshold is not between 0 and 1
+        TypeError:  If df is not a DataFrame
     """
-    # ── Placeholder — to be implemented ──────────────────
-    logger.info(f"[TODO] Null column removal (threshold={threshold}) — skipping for now")
-    return df
+
+    # ── Input validation ──────────────────────────────────
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Expected a pandas DataFrame, got {type(df)}")
+
+    if not 0 < threshold < 1:
+        raise ValueError(f"Threshold must be between 0 and 1, got {threshold}")
+
+    if df.empty:
+        logger.warning("Received an empty DataFrame — skipping null column removal")
+        return df
+
+    # ── Calculate null percentage per column ──────────────
+    null_pct = df.isnull().mean()  # gives 0.0 to 1.0 per column
+
+    # ── Identify columns to drop ──────────────────────────
+    cols_to_drop = null_pct[null_pct > threshold].index.tolist()
+
+    # ── Nothing to drop ───────────────────────────────────
+    if not cols_to_drop:
+        logger.info(
+            f"No columns exceed {threshold * 100:.0f}% null threshold — "
+            f"all {len(df.columns)} columns retained"
+        )
+        return df
+
+    # ── Log what's being dropped ──────────────────────────
+    logger.info(
+        f"Dropping {len(cols_to_drop)} columns exceeding "
+        f"{threshold * 100:.0f}% null threshold"
+    )
+
+  
+    # ── Drop and report ───────────────────────────────────
+    df_cleaned = df.drop(columns=cols_to_drop)
+
+    logger.info(
+        f"Shape before: {df.shape} | "
+        f"Shape after:  {df_cleaned.shape} | "
+        f"Columns removed: {len(cols_to_drop)}"
+    )
+
+    return df_cleaned
 
 
 def build_base() -> pd.DataFrame:
