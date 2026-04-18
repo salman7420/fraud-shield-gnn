@@ -1,16 +1,14 @@
 """
 this file is used for data ingestion / loading.
-- data/train/train_identity.csv
-- data/train/train_transaction.csv
+- raw/train/train_identity.csv
+- raw/train/train_transaction.csv
 """
 
 import pandas as pd
-import logging 
+from src.utils.logger import get_logger
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__) 
 
 def load_data(input_path: str | Path ) -> pd.DataFrame:
      """
@@ -46,6 +44,30 @@ def load_data(input_path: str | Path ) -> pd.DataFrame:
      
      logger.info(f"Loaded data with {len(df):,} rows and {len(df.columns)} columns")
      return df
+
+
+
+def save_data(df: pd.DataFrame, output_path: str | Path) -> None:
+    """
+    Save a DataFrame to a CSV file.
+
+    Args:
+        df:          DataFrame to save.
+        output_path: Path to save the output CSV file.
+
+    Raises:
+        ValueError: If the DataFrame is empty.
+    """
+    output_path = Path(output_path)
+
+    if df.empty:
+        raise ValueError("Cannot save an empty DataFrame.")
+
+    # Create parent directories if they don't exist
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df.to_csv(output_path, index=False)
+    logger.info(f"Saved {len(df):,} rows to: {output_path}")
 
 
 
