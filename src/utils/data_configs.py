@@ -7,12 +7,16 @@ ROOT = Path(__file__).resolve().parents[2]
 RAW_TRANSACTION = ROOT / "data/raw/train_transaction.csv"
 RAW_IDENTITY    = ROOT / "data/raw/train_identity.csv"
 
-# ── Base (unsplit) ────────────────────────────────────────
-BASE_DATA  = ROOT / "data/base/train_base.csv"
-
-# ── Base (split) ──────────────────────────────────────────
+# ── Base ────────────────────────────────────────
+BASE_DATA  = ROOT / "data/base/base.csv"
 BASE_TRAIN = ROOT / "data/base/train.csv"
+BASE_VAL   = ROOT / "data/base/val.csv"
 BASE_TEST  = ROOT / "data/base/test.csv"
+
+# ── Split ratios ──────────────────────────────────────────
+TRAIN_RATIO = 0.70   # first 70% of time → train
+VAL_RATIO   = 0.15   # next 15% of time  → validation
+TEST_RATIO  = 0.15   # last 15% of time  → test
 
 # ── V1: XGBoost Baseline ──────────────────────────────────
 V1_TRAIN = ROOT / "data/versions/v1_xgboost/train.csv"

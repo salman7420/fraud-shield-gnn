@@ -8,13 +8,19 @@ Fucntions:
 - Save base data 
 
 """
+import pandas as pd 
 
-import pandas as pd
 from src.utils.data_configs import (
     RAW_TRANSACTION,
     RAW_IDENTITY,
-    BASE_DATA,
-    NULL_THRESHOLD
+    NULL_THRESHOLD,
+    BASE_TRAIN,
+    BASE_VAL,
+    BASE_TEST,
+    TRAIN_RATIO,
+    VAL_RATIO,
+    TEST_RATIO,
+    TARGET_COL
 )
 
 from src.data_ingestion.load_data import load_data, save_data
@@ -231,11 +237,97 @@ def fix_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def time_split(
+    df: pd.DataFrame,
+    time_col: str = "TransactionDT",
+    target_col: str = TARGET_COL,
+    train_ratio: float = TRAIN_RATIO,
+    val_ratio: float = VAL_RATIO,
+    test_ratio: float = TEST_RATIO,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Split DataFrame into train, validation and test using time-based ordering.
+
+    WHY NOT STRATIFIED SKLEARN SPLIT:
+        Fraud transactions are time-dependent — shuffling rows would let the model
+        see future transactions during training (data leakage). Time-based split
+        prevents this. Class imbalance is handled downstream via SMOTE on train only.
+
+    WHY NOT sklearn TimeSeriesSplit:
+        sklearn's TimeSeriesSplit is for cross-validation (multiple folds).
+        We need a single clean 3-way split for train/val/test.
+
+    Args:
+        df:          Input DataFrame
+        time_col:    Column to sort by chronologically (TransactionDT)
+        target_col:  Target column to verify fraud rates per split
+        train_ratio: Proportion for training   (default: 0.70)
+        val_ratio:   Proportion for validation (default: 0.15)
+        test_ratio:  Proportion for test       (default: 0.15)
+
+    Returns:
+        Tuple of (df_train, df_val, df_test)
+    """
+
+    # ── Input validation ──────────────────────────────────
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Expected a pandas DataFrame, got {type(df)}")
+
+    if df.empty:
+        raise ValueError("Cannot split an empty DataFrame")
+
+    if time_col not in df.columns:
+        raise KeyError(f"Time column '{time_col}' not found in DataFrame")
+
+    if not abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6:
+        raise ValueError(
+            f"Ratios must sum to 1.0, "
+            f"got {train_ratio + val_ratio + test_ratio:.4f}"
+        )
+
+    # ── Sort chronologically ──────────────────────────────
+    logger.info(f"Sorting {len(df):,} rows by '{time_col}'...")
+    df_sorted = df.sort_values(time_col).reset_index(drop=True)
+
+    # ── Compute cutoff indices ────────────────────────────
+    n         = len(df_sorted)
+    train_end = int(n * train_ratio)
+    val_end   = int(n * (train_ratio + val_ratio))
+
+    # ── Slice ─────────────────────────────────────────────
+    df_train = df_sorted.iloc[:train_end].reset_index(drop=True)
+    df_val   = df_sorted.iloc[train_end:val_end].reset_index(drop=True)
+    df_test  = df_sorted.iloc[val_end:].reset_index(drop=True)
+
+    # ── Assert no time leakage ────────────────────────────
+    assert df_train[time_col].max() <= df_val[time_col].min(), \
+        "Data leakage: train contains timestamps >= validation start"
+    assert df_val[time_col].max() <= df_test[time_col].min(), \
+        "Data leakage: validation contains timestamps >= test start"
+
+    # ── Log split summary ─────────────────────────────────
+    logger.info("Time-based split complete:")
+    for name, split in [("Train", df_train), ("Val", df_val), ("Test", df_test)]:
+        fraud_rate = split[target_col].mean() * 100
+        logger.info(
+            f"  {name:<6} | Rows: {len(split):>7,} | "
+            f"TransactionDT: {split[time_col].min():,} → {split[time_col].max():,} | "
+            f"Fraud rate: {fraud_rate:.2f}%"
+        )
+
+        # ── Warn if fraud rate deviates too much from overall ─
+        overall_fraud = df[target_col].mean() * 100
+        if abs(fraud_rate - overall_fraud) > 1.5:
+            logger.warning(
+                f"  {name} fraud rate ({fraud_rate:.2f}%) deviates significantly "
+                f"from overall ({overall_fraud:.2f}%) — "
+                f"consider verifying temporal fraud distribution"
+            )
+
+    return df_train, df_val, df_test
 
 
-
-def build_base() -> pd.DataFrame:
-
+def build_base() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Full pipeline to build the base dataset:
         1. Load raw transaction and identity data
@@ -243,49 +335,60 @@ def build_base() -> pd.DataFrame:
         3. Remove columns with > NULL_THRESHOLD missing values
         4. Remove duplicate rows
         5. Fix data types
-        6. Save to BASE_DATA path
+        6. Time-based split into train / val / test
+        7. Save all three splits to data/base/
 
     Returns:
-        Base DataFrame ready for versioning
+        Tuple of (df_train, df_val, df_test)
     """
-
     logger.info("=" * 50)
     logger.info("Starting base dataset build pipeline")
     logger.info("=" * 50)
 
     # ── Step 1: Load ──────────────────────────────────────
-    logger.info("Step 1/6 — Loading raw data")
+    logger.info("Step 1/7 — Loading raw data")
     df_transaction = load_data(RAW_TRANSACTION)
     df_identity    = load_data(RAW_IDENTITY)
 
     # ── Step 2: Merge ─────────────────────────────────────
-    logger.info("Step 2/6 — Merging datasets")
+    logger.info("Step 2/7 — Merging datasets")
     df = merge_data(df_transaction, df_identity)
 
     # ── Step 3: Remove high-null columns ──────────────────
-    logger.info("Step 3/6 — Removing high-null columns")
+    logger.info("Step 3/7 — Removing high-null columns")
     df = remove_high_null_columns(df, threshold=NULL_THRESHOLD)
 
     # ── Step 4: Remove duplicates ─────────────────────────
-    logger.info("Step 4/6 — Removing duplicate rows")
+    logger.info("Step 4/7 — Removing duplicate rows")
     df = drop_duplicates(df)
 
     # ── Step 5: Fix data types ────────────────────────────
-    logger.info("Step 5/6 — Fixing data types")
+    logger.info("Step 5/7 — Fixing data types")
     df = fix_dtypes(df)
 
-    # ── Step 6: Save ──────────────────────────────────────
-    logger.info("Step 6/6 — Saving base dataset")
-    save_data(df, BASE_DATA)
+    # ── Step 6: Time-based split ──────────────────────────
+    logger.info("Step 6/7 — Performing time-based split")
+    df_train, df_val, df_test = time_split(df)
+
+    # ── Step 7: Save all splits ───────────────────────────
+    logger.info("Step 7/7 — Saving splits to data/base/")
+    save_data(df_train, BASE_TRAIN)
+    save_data(df_val,   BASE_VAL)
+    save_data(df_test,  BASE_TEST)
 
     logger.info("=" * 50)
-    logger.info(f"Base dataset build complete | Final shape: {df.shape}")
+    logger.info(
+        f"Base pipeline complete | "
+        f"Train: {len(df_train):,} | "
+        f"Val: {len(df_val):,} | "
+        f"Test: {len(df_test):,}"
+    )
     logger.info("=" * 50)
 
-    return df
+    return df_train, df_val, df_test
 
 
 if __name__ == "__main__":
-    # Run directly from terminal: python -m src.data_processing.base_builder
-    df_base = build_base()
-    print(df_base.head())
+    df_train, df_val, df_test = build_base()
+    print(df_train.head())
+
