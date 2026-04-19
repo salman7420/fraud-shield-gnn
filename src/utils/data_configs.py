@@ -21,6 +21,8 @@ TEST_RATIO  = 0.15   # last 15% of time  → test
 # ── V1: XGBoost Baseline ──────────────────────────────────
 V1_TRAIN = ROOT / "data/versions/v1_xgboost/train.csv"
 V1_TEST  = ROOT / "data/versions/v1_xgboost/test.csv"
+V1_VAL  = ROOT / "data/versions/v1_xgboost/val.csv"
+
 
 # ── V2: Isolation Forest ──────────────────────────────────
 V2_TRAIN = ROOT / "data/versions/v2_iso/train.csv"
