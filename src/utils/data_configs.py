@@ -22,6 +22,7 @@ TEST_RATIO  = 0.15   # last 15% of time  → test
 V1_TRAIN = ROOT / "data/versions/v1_xgboost/train.csv"
 V1_TEST  = ROOT / "data/versions/v1_xgboost/test.csv"
 V1_VAL  = ROOT / "data/versions/v1_xgboost/val.csv"
+V1_MODEL = ROOT/ "src/version_1/model"
 
 
 # ── V2: Isolation Forest ──────────────────────────────────
@@ -31,6 +32,10 @@ V2_TEST  = ROOT / "data/versions/v2_iso/test.csv"
 # ── V3: XGBoost + Feature Engineering ────────────────────
 V3_TRAIN = ROOT / "data/versions/v3_xgboost_fe/train.csv"
 V3_TEST  = ROOT / "data/versions/v3_xgboost_fe/test.csv"
+
+# ── V4: GNN ───────────────────────────────────────────────
+V4_TRAIN = ROOT / "data/versions/v4_gnn/train.csv"
+V4_TEST  = ROOT / "data/versions/v4_gnn/test.csv"
 
 # ── V4: GNN ───────────────────────────────────────────────
 V4_TRAIN = ROOT / "data/versions/v4_gnn/train.csv"
