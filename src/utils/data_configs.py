@@ -22,7 +22,8 @@ TEST_RATIO  = 0.15   # last 15% of time  → test
 V1_TRAIN = ROOT / "data/versions/v1_xgboost/train.csv"
 V1_TEST  = ROOT / "data/versions/v1_xgboost/test.csv"
 V1_VAL  = ROOT / "data/versions/v1_xgboost/val.csv"
-V1_MODEL = ROOT/ "src/version_1/model"
+V1_MODEL   = ROOT / "src/version_1/model"
+V1_EVAL = ROOT / "src/version_1/result"
 
 
 # ── V2: Isolation Forest ──────────────────────────────────

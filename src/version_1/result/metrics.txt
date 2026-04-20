@@ -1,0 +1,5 @@
+─── V1 XGBoost Evaluation Results (Test Set) ───────
+  AUC-ROC  : 0.8956
+  AUPRC    : 0.5061
+  PR Curve : /Users/salmanrasheed/Desktop/Projects/fraud-shield-gnn/src/version_1/result/pr_curve_test.png
+────────────────────────────────────────────────────
