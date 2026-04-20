@@ -46,3 +46,6 @@ V4_TEST  = ROOT / "data/versions/v4_gnn/test.csv"
 NULL_THRESHOLD = 0.80
 TARGET_COL     = "isFraud"
 RANDOM_STATE   = 42
+
+# ── SHAP Feature Importance ──────────────────────────────
+V1_SHAP = ROOT / "src/version_1/result"
