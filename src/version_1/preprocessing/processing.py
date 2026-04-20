@@ -8,14 +8,8 @@ from sklearn.preprocessing import LabelEncoder
 logger = get_logger(__name__) 
 
 
-# ── Load base data  ───────────────────────────────────────────
 
-v1_train = load_data(BASE_TRAIN)
-v1_test = load_data(BASE_TEST)
-v1_val = load_data(BASE_VAL)
-
-# ── Step 2: Drop TransactionID ────────────────────────────────
-
+# ── Step 1: Drop TransactionID ────────────────────────────────
 def drop_id_column(df: pd.DataFrame, col: str = "TransactionID") -> pd.DataFrame:
     if col in df.columns:
         df = df.drop(columns=[col])
@@ -24,12 +18,8 @@ def drop_id_column(df: pd.DataFrame, col: str = "TransactionID") -> pd.DataFrame
         logger.warning(f"Column '{col}' not found — skipping drop")
     return df
 
-v1_train = drop_id_column(v1_train)
-v1_val   = drop_id_column(v1_val)
-v1_test  = drop_id_column(v1_test)
 
-# ── Step 3: Separate features and target ─────────────────────
-
+# ── Step 2: Separate features and target ─────────────────────
 def separate_X_y(df: pd.DataFrame, target: str = "isFraud"):
     if target not in df.columns:
         raise ValueError(f"Target column '{target}' not found in DataFrame")
@@ -43,11 +33,8 @@ def separate_X_y(df: pd.DataFrame, target: str = "isFraud"):
     return X, y
 
 
-X_train, y_train = separate_X_y(v1_train)
-X_val,   y_val   = separate_X_y(v1_val)
-X_test,  y_test  = separate_X_y(v1_test)
 
-# ── Step 4: Identify column types ─────────────────────────────
+# ── Step 3: Identify column types ─────────────────────────────
 def identify_column_types(X: pd.DataFrame):
     """
     Fit on X_train only.
@@ -63,10 +50,7 @@ def identify_column_types(X: pd.DataFrame):
     return numeric_cols, categorical_cols
 
 
-# Fit on train only — val and test will use these same lists
-numeric_cols, categorical_cols = identify_column_types(X_train)
-
-# ── Step 5: Fill numeric nulls with -999 ──────────────────────
+# ── Step 4: Fill numeric nulls with -999 ──────────────────────
 NULL_NUMERIC = -999
 
 def fill_numeric_nulls(X: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
@@ -78,11 +62,7 @@ def fill_numeric_nulls(X: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
     return X
 
 
-X_train = fill_numeric_nulls(X_train, numeric_cols)
-X_val   = fill_numeric_nulls(X_val,   numeric_cols)
-X_test  = fill_numeric_nulls(X_test,  numeric_cols)
-
-# ── Step 6: Fill categorical nulls with "Unknown" ─────────────
+# ── Step 5: Fill categorical nulls with "Unknown" ─────────────
 NULL_CATEGORICAL = "Unknown"
 
 def fill_categorical_nulls(X: pd.DataFrame, categorical_cols: list) -> pd.DataFrame:
@@ -94,14 +74,8 @@ def fill_categorical_nulls(X: pd.DataFrame, categorical_cols: list) -> pd.DataFr
     return X
 
 
-X_train = fill_categorical_nulls(X_train, categorical_cols)
-X_val   = fill_categorical_nulls(X_val,   categorical_cols)
-X_test  = fill_categorical_nulls(X_test,  categorical_cols)
 
-
-# ── Step 7: Label encode categorical columns ───────────────────
-
-
+# ── Step 6: Label encode categorical columns ───────────────────
 def fit_label_encoders(X_train: pd.DataFrame, categorical_cols: list) -> dict:
     """
     Fit one LabelEncoder per categorical column on TRAIN only.
@@ -140,20 +114,55 @@ def apply_label_encoders(X: pd.DataFrame, encoders: dict) -> pd.DataFrame:
     return X
 
 
-# ── Fit on train, transform all three ─────────────────────────
-encoders = fit_label_encoders(X_train, categorical_cols)
 
-X_train = apply_label_encoders(X_train, encoders)
-X_val   = apply_label_encoders(X_val,   encoders)
-X_test  = apply_label_encoders(X_test,  encoders)
+def run():
+    logger.info("═══ V1 Preprocessing Started ═══════════════════════")
 
-# ── Step 8: Save v1 processed data ────────────────────────────
+    # Step 1: Load
+    v1_train = load_data(BASE_TRAIN)
+    v1_test  = load_data(BASE_TEST)
+    v1_val   = load_data(BASE_VAL)
 
-# Recombine X and y before saving
-train_out = pd.concat([X_train, y_train], axis=1)
-val_out   = pd.concat([X_val,   y_val],   axis=1)
-test_out  = pd.concat([X_test,  y_test],  axis=1)
+    # Step 2: Drop ID
+    v1_train = drop_id_column(v1_train)
+    v1_val   = drop_id_column(v1_val)
+    v1_test  = drop_id_column(v1_test)
 
-save_data(train_out, V1_TRAIN)
-save_data(val_out,   V1_VAL)
-save_data(test_out,  V1_TEST)
+    # Step 3: Separate X and y
+    X_train, y_train = separate_X_y(v1_train)
+    X_val,   y_val   = separate_X_y(v1_val)
+    X_test,  y_test  = separate_X_y(v1_test)
+
+    # Step 4: Identify column types
+    numeric_cols, categorical_cols = identify_column_types(X_train)
+
+    # Step 5: Fill numeric nulls
+    X_train = fill_numeric_nulls(X_train, numeric_cols)
+    X_val   = fill_numeric_nulls(X_val,   numeric_cols)
+    X_test  = fill_numeric_nulls(X_test,  numeric_cols)
+
+    # Step 6: Fill categorical nulls
+    X_train = fill_categorical_nulls(X_train, categorical_cols)
+    X_val   = fill_categorical_nulls(X_val,   categorical_cols)
+    X_test  = fill_categorical_nulls(X_test,  categorical_cols)
+
+    # Step 7: Label encode
+    encoders = fit_label_encoders(X_train, categorical_cols)
+    X_train  = apply_label_encoders(X_train, encoders)
+    X_val    = apply_label_encoders(X_val,   encoders)
+    X_test   = apply_label_encoders(X_test,  encoders)
+
+    # ── Step 8: Save v1 processed data ────────────────────────────
+    # Recombine X and y before saving
+    train_out = pd.concat([X_train, y_train], axis=1)
+    val_out   = pd.concat([X_val,   y_val],   axis=1)
+    test_out  = pd.concat([X_test,  y_test],  axis=1)
+
+    save_data(train_out, V1_TRAIN)
+    save_data(val_out,   V1_VAL)
+    save_data(test_out,  V1_TEST)
+
+    logger.info("═══ V1 Preprocessing Completed ═════════════════════")
+
+if __name__ == "__main__":
+    run()
