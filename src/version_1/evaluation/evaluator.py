@@ -1,6 +1,6 @@
 # ROOT/src/version_1/evaluation/evaluator.py
 
-from src.utils.data_configs import V1_TEST, V1_MODEL, V1_EVAL
+from src.utils.data_configs import V1_TEST, V1_MODEL, V1_EVAL, V1_SHAP
 from src.utils.logger import get_logger
 from src.data_ingestion.load_data import load_data
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score
@@ -10,12 +10,16 @@ import xgboost as xgb
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+import shap
+import json
+
 logger = get_logger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────
 TARGET_COL    = "isFraud"
 V1_MODEL_PATH = V1_MODEL / "model.json"
 V1_RESULT_DIR = V1_EVAL
+
 
 
 # ── Functions ──────────────────────────────────────────────────
@@ -94,6 +98,53 @@ def log_final_results(auc_roc: float, auprc: float, save_dir: Path) -> None:
     logger.info(f"Metrics saved to: {save_dir / 'metrics.txt'}")
 
 
+def run_shap_analysis(model: xgb.XGBClassifier,
+                      X_test: pd.DataFrame,
+                      save_dir: Path,
+                      top_n: int = 50) -> list:
+    """
+    Computes SHAP values on test set.
+    Saves top N feature names to a JSON file for V2/V3 use.
+    Returns list of top N feature names.
+    """
+    logger.info(f"Running SHAP analysis | top {top_n} features...")
+
+    # ── Compute SHAP values ───────────────────────────────────
+    explainer   = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_test)
+
+    # ── Mean absolute SHAP per feature ────────────────────────
+    # abs() because direction doesn't matter — magnitude does
+    mean_shap = pd.Series(
+        data  = abs(shap_values).mean(axis=0),
+        index = X_test.columns
+    ).sort_values(ascending=False)
+
+    # ── Top N features ────────────────────────────────────────
+    top_features = mean_shap.head(top_n).index.tolist()
+
+    logger.info(f"Top {top_n} features identified")
+    logger.info(f"Top 10 preview: {top_features[:10]}")
+
+    # ── Save top features to JSON ─────────────────────────────
+    save_dir.mkdir(parents=True, exist_ok=True)
+    features_path = save_dir / "top_features.json"
+
+    with open(features_path, "w") as f:
+        json.dump({"top_features": top_features}, f, indent=2)
+
+    logger.info(f"Top {top_n} features saved to: {features_path}")
+
+    # ── Save full SHAP importance to CSV ──────────────────────
+    shap_path = save_dir / "shap_importance.csv"
+    mean_shap.reset_index().rename(
+        columns={"index": "feature", 0: "mean_abs_shap"}
+    ).to_csv(shap_path, index=False)
+
+    logger.info(f"Full SHAP importance saved to: {shap_path}")
+
+    return top_features
+
 # ── run() ──────────────────────────────────────────────────────
 def run():
     logger.info("═══ V1 Evaluation Started ═══════════════════════════")
@@ -121,6 +172,8 @@ def run():
 
     # Step 8: Log results
     log_final_results(auc_roc, auprc, V1_RESULT_DIR)
+
+    run_shap_analysis(model, X_test, V1_SHAP, top_n=50)
 
     logger.info("═══ V1 Evaluation Completed ═════════════════════════")
 
