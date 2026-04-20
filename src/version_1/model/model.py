@@ -94,6 +94,7 @@ def run():
     logger.info(f"  Model saved to      : {V1_MODEL_PATH}")
     logger.info("───────────────────────────────────────────────────")
     logger.info("═══ V1 Model Process Completed ═════════════════════")
+    
 if __name__ == "__main__":
     run()
 
