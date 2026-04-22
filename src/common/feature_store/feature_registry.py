@@ -38,3 +38,14 @@ AGGREGATION_FEATURES = [
     "email_fraud_rate",   # historical fraud rate for this domain — mail.com=19.8%
     "email_txn_count",    # how many txns this domain had in train
 ]
+
+
+# ── Ratio Features ─────────────────────────────────────────
+# Source: ratio_features.py | Type: Pure transform
+# Depends on: aggregation_features must be applied first
+# Smoothing: +1 on all denominators (SMOOTH constant)
+# Capping: clipped at 500x to prevent outlier explosion
+RATIO_FEATURES = [
+    "amt_to_card1_mean_ratio",  # this txn vs card's avg spend — fraud deviated +$19.89 avg
+    "amt_to_card1_std_ratio",   # std-deviation ratio — bot cards (std=0) get high ratio
+]
