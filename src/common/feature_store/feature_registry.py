@@ -19,3 +19,10 @@ AMOUNT_FEATURES = [
     "amt_is_high",       # 1 if amt > $280 (5.1% fraud)
     "amt_bucket",        # decile 0-9, fitted on train only — no leakage
 ]
+
+# ── Null Flag Features ─────────────────────────────────────
+NULL_FLAG_FEATURES = [
+    "id_data_present",   # 1 if device identity block present (corr=1.0 covers 19+ cols)
+    "id_13_was_null",    # 1 if id_13 missing — independent null pattern, diff=0.292
+    "id_16_was_null",    # 1 if id_16 missing — independent null pattern, diff=0.265
+]
