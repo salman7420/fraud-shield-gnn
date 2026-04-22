@@ -26,3 +26,15 @@ NULL_FLAG_FEATURES = [
     "id_13_was_null",    # 1 if id_13 missing — independent null pattern, diff=0.292
     "id_16_was_null",    # 1 if id_16 missing — independent null pattern, diff=0.265
 ]
+
+# ── Aggregation Features ───────────────────────────────────
+
+AGGREGATION_FEATURES = [
+    "card1_txn_count",    # times card appeared in train (U-shape: 1-txn and 100+ riskier)
+    "card1_mean_amt",     # avg spend for this card in train (used in ratio features)
+    "card1_std_amt",      # spend variation — low std = bot-like, 25th pct $41 vs $98
+    "card1_is_high_freq", # 1 if card had 100+ txns in train (4.04% fraud rate)
+   
+    "email_fraud_rate",   # historical fraud rate for this domain — mail.com=19.8%
+    "email_txn_count",    # how many txns this domain had in train
+]
