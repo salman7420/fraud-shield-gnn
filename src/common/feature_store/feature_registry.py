@@ -49,3 +49,31 @@ RATIO_FEATURES = [
     "amt_to_card1_mean_ratio",  # this txn vs card's avg spend — fraud deviated +$19.89 avg
     "amt_to_card1_std_ratio",   # std-deviation ratio — bot cards (std=0) get high ratio
 ]
+
+# ── Graph Features ─────────────────────────────────────────
+# Source: graph_features.py | Type: Fit + Apply (train only)
+# EDA: device_txn_count 21–100 = 14.5% fraud (strongest signal in EDA)
+#      card_email_pair bimodal: 186k pairs at 0%, 1,047 pairs at 100%
+
+GRAPH_FEATURES = [
+    "device_txn_count",           # device activity — 21–100 txns = 4x baseline fraud
+    "card_device_is_high",        # 1 if card tied to 200+ devices — up to 16.6% fraud
+    "addr_is_unique",             # 1 if address used by only 1 card — 0.0% fraud
+    "card_email_pair_fraud_rate", # known bad card+email combo — bimodal 0% vs 100%
+    "uid_fraud_rate",             # known bad card+addr combo  — 0.3% rows at 100%
+]
+
+
+# ══════════════════════════════════════════════════════════
+#  MASTER LIST — import this in build_enriched.py
+# ══════════════════════════════════════════════════════════
+ALL_ENGINEERED_FEATURES = (
+    TIME_FEATURES        # 6  features
+    + AMOUNT_FEATURES    # 6  features
+    + NULL_FLAG_FEATURES # 3  features
+    + AGGREGATION_FEATURES # 6 features
+    + RATIO_FEATURES     # 2  features
+    + GRAPH_FEATURES     # 5  features
+)
+# Total: 28 engineered features
+# These + SHAP top-50 raw features = final model input
