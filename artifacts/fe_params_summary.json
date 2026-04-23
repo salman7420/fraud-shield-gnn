@@ -1,0 +1,18 @@
+{
+  "amt_bucket_bins": "array/list with 11 elements",
+  "null_flag_cols": "array/list with 3 elements",
+  "card1_lookup": "dict with 12,242 entries",
+  "card1_fallback": "dict with 4 entries",
+  "email_lookup": "dict with 59 entries",
+  "email_fallback": "dict with 2 entries",
+  "global_fraud_rate": 0.035169,
+  "device_txn_count_lookup": "dict with 1,546 entries",
+  "device_txn_count_fallback": "1",
+  "card_device_degree_lookup": "dict with 12,242 entries",
+  "card_device_degree_fallback": "0",
+  "addr_card_degree_lookup": "dict with 318 entries",
+  "addr_card_degree_fallback": "0",
+  "pair_global_fraud_rate": 0.035169,
+  "card_email_pair_rates": "dict with 37,432 entries",
+  "uid_fraud_rates": "dict with 34,755 entries"
+}
