@@ -30,6 +30,9 @@ V1_EVAL = ROOT / "src/version_1/result"
 V2_TRAIN = ROOT / "data/versions/v2_iso/train.csv"
 V2_TEST  = ROOT / "data/versions/v2_iso/test.csv"
 
+# Data
+ENRICHED = ROOT / "data" / "enriched"
+
 # ── V3: XGBoost + Feature Engineering ────────────────────
 V3_TRAIN = ROOT / "data/versions/v3_xgboost_fe/train.csv"
 V3_TEST  = ROOT / "data/versions/v3_xgboost_fe/test.csv"
@@ -49,3 +52,6 @@ RANDOM_STATE   = 42
 
 # ── SHAP Feature Importance ──────────────────────────────
 V1_SHAP = ROOT / "src/version_1/result"
+
+# # ── Common Pipeline Artifacts ──────────────────────────────
+ARTIFACTS = ROOT / "artifacts"
