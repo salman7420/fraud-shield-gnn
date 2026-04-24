@@ -1,0 +1,18 @@
+{
+  "cat_features": [
+    "DeviceInfo",
+    "DeviceType",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "P_emaildomain",
+    "ProductCD",
+    "R_emaildomain",
+    "card4",
+    "card6",
+    "id_31"
+  ],
+  "cat_features_count": 12,
+  "null_fill_value": "missing"
+}
