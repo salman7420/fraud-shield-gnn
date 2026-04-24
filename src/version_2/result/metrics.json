@@ -1,0 +1,16 @@
+{
+  "auc_roc": 0.86882,
+  "auprc": 0.51764,
+  "f1": 0.53313,
+  "precision": 0.64637,
+  "recall": 0.45365,
+  "confusion_matrix": {
+    "TP": 1380,
+    "FP": 755,
+    "TN": 84784,
+    "FN": 1662
+  },
+  "threshold": 0.5,
+  "val_rows": 88581,
+  "fraud_rate_val": 0.03434
+}
