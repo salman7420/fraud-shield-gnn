@@ -26,12 +26,15 @@ V1_MODEL   = ROOT / "src/version_1/model"
 V1_EVAL = ROOT / "src/version_1/result"
 
 
-# ── V2: Isolation Forest ──────────────────────────────────
-V2_TRAIN = ROOT / "data/versions/v2_iso/train.csv"
-V2_TEST  = ROOT / "data/versions/v2_iso/test.csv"
+# ── V2: Catboost ──────────────────────────────────
+V2_TRAIN = ROOT / "data/versions/v2_catboost/train.csv"
+V2_TEST  = ROOT / "data/versions/v2_catboost/test.csv"
+V2_VAL  = ROOT / "data/versions/v2_catboost/val.csv"
+V2_RESULT = ROOT / "src/version_2/result" 
+V2_MODEL   = ROOT / "src/version_2/model"
 
 # Data
-ENRICHED = ROOT / "data" / "enriched"
+ENRICHED = ROOT / "data/enriched"
 
 # ── V3: XGBoost + Feature Engineering ────────────────────
 V3_TRAIN = ROOT / "data/versions/v3_xgboost_fe/train.csv"
