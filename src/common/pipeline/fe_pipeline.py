@@ -616,7 +616,10 @@ def main() -> None:
 
         # Step 9 — Load top features
         logger.info("\n[ Step 9 ] Loading SHAP top features ...")
-        top_raw_features = load_top_features()
+        #top_raw_features = load_top_features()
+        top_raw_features = []
+        logger.info("Mode B — keeping ALL raw columns + 28 engineered features")
+
 
         # Step 10 — Select final columns
         logger.info("\n[ Step 10 ] Selecting final columns ...")
