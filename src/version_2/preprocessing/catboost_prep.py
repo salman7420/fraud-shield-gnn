@@ -3,14 +3,11 @@
 # Stage 2B — CatBoost Data Preparation
 # Transforms enriched splits into CatBoost-ready format.
 #
-# What this file does:
-#   1. Loads enriched splits (data/enriched/)
-#   2. Identifies categorical columns (object dtype)
-#   3. Fills categorical NaN → "missing" string
-#      (numeric NaN left untouched — CatBoost handles natively)
-#   4. Casts binary flag columns to int
-#   5. Saves cat_features list → artifacts/catboost_cat_features.json
-#   6. Saves CatBoost-ready splits → data/versions/v2_catboost/
+# FEATURE_MODE controls what features are used:
+#   "all"   → ALL raw features + engineered features (DEFAULT)
+#             Best for maximum signal — recommended for v2 rerun + v3
+#   "top50" → Top 50 features from v1 XGBoost + engineered features
+#             Use if you want to compare the top50 strategy
 #
 # Usage (from project ROOT):
 #   python -m src.common.model_prep.catboost_prep
@@ -21,7 +18,6 @@ import time
 import traceback
 from pathlib import Path
 
-from src.data_ingestion.load_data import load_data, save_data
 import numpy as np
 import pandas as pd
 
@@ -37,24 +33,71 @@ from src.utils.data_configs import (
     V2_TRAIN,
     V2_VAL,
     V2_TEST,
+    V2_ALL_TRAIN,
+    V2_ALL_VAL,
+    V2_ALL_TEST,
 )
 
 logger = get_logger(__name__)
 
+
+# ══════════════════════════════════════════════════════════
+#  ★ FEATURE MODE FLAG — change this before running ★
+#
+#  "all"   → all raw features + engineered (DEFAULT — recommended)
+#  "top50" → top 50 features from v1 + engineered
+# ══════════════════════════════════════════════════════════
+FEATURE_MODE = "all"     # ← change to "top50" to use top-50 strategy
+
+
 # ── Paths ──────────────────────────────────────────────────
-ENRICHED_DIR  = ENRICHED
-ARTIFACTS_DIR = ARTIFACTS
+ENRICHED_DIR      = ENRICHED
+ARTIFACTS_DIR     = ARTIFACTS
 CAT_FEATURES_PATH = ARTIFACTS_DIR / "catboost_cat_features.json"
+TOP50_PATH        = ARTIFACTS_DIR / "top50_features.json"   # written by v1
 
-# Output paths from data_configs
-V2_DIR = V2_TRAIN.parent   # data/versions/v2_catboost/
+# ── Output dirs: "all" mode vs "top50" mode ───────────────
+# "all"   → data/versions/v2_catboost/       (same dir as before, fixed)
+# "top50" → data/versions/v2_catboost_top50/ (separate — no overwrite)
+OUTPUT_PATHS = {
+    "all": {
+        "train": V2_ALL_TRAIN,
+        "val":   V2_ALL_VAL,
+        "test":  V2_ALL_TEST,
+    },
+    "top50": {
+        "train": V2_TRAIN,
+        "val":   V2_VAL,
+        "test":  V2_TEST,
+    },
+}
 
-SPLITS = ["train", "val", "test"]
-
-# ── Null fill value for categorical columns ────────────────
-# CatBoost requires string values for cat cols — NaN causes error
-# "missing" becomes its own category and CatBoost learns its signal
+SPLITS      = ["train", "val", "test"]
 CAT_NULL_FILL = "missing"
+
+# ── Engineered feature columns (always included in both modes) ──
+# These are additive — stacked on top of whatever raw features
+# are selected. Never replace raw features.
+ENGINEERED_COLS = [
+    # Amount features
+    "amt_log",
+    "amt_cents",
+    "amt_is_round",
+    "amt_bucket",
+    # Behavioral features
+    "device_txn_count",
+    "addr_is_unique",
+    # Binary flags
+    "is_weekend",
+    "is_high_risk_hour",
+    "id_data_present",
+    "id_13_was_null",
+    "id_16_was_null",
+    "card1_is_high_freq",
+    "amt_is_very_low",
+    "amt_is_high",
+    "card_device_is_high",
+]
 
 
 # ══════════════════════════════════════════════════════════
@@ -62,10 +105,7 @@ CAT_NULL_FILL = "missing"
 # ══════════════════════════════════════════════════════════
 
 def load_enriched_splits() -> dict[str, pd.DataFrame]:
-    """
-    Loads enriched train/val/test from data/enriched/.
-    Validates each file exists and is non-empty.
-    """
+    """Loads enriched train/val/test from data/enriched/."""
     splits = {}
     for name in SPLITS:
         path = ENRICHED_DIR / f"{name}.csv"
@@ -92,17 +132,99 @@ def load_enriched_splits() -> dict[str, pd.DataFrame]:
     return splits
 
 
+# ══════════════════════════════════════════════════════════
+#  STEP 2 — SELECT FEATURES BY MODE
+# ══════════════════════════════════════════════════════════
+
+def select_features(
+    splits: dict[str, pd.DataFrame],
+    mode: str,
+) -> dict[str, pd.DataFrame]:
+    """
+    Selects feature columns based on FEATURE_MODE.
+
+    MODE = "all":
+      Keeps ALL columns from enriched splits.
+      Engineered cols already exist in enriched — nothing to drop.
+      This is the maximum-signal strategy. [web:430]
+      CatBoost discovers feature interactions internally — more
+      raw features = more combinations it can explore. [web:431]
+
+    MODE = "top50":
+      Loads top50 feature list from artifacts/top50_features.json
+      (written by v1 evaluation pipeline).
+      Keeps only those 50 cols + all engineered cols + target.
+      Use this ONLY to compare strategies — not recommended as default.
+
+    In both modes: target col (isFraud) always preserved in train/val.
+    """
+    if mode not in ("all", "top50"):
+        raise ValueError(
+            f"FEATURE_MODE must be 'all' or 'top50', got: '{mode}'"
+        )
+
+    logger.info(f"\n[ Feature Mode ] : {mode.upper()}")
+
+    if mode == "all":
+        logger.info(
+            "  Using ALL raw features + engineered features.\n"
+            f"  Total cols in train: {splits['train'].shape[1]}"
+        )
+        # Nothing to drop — enriched already has everything
+        return splits
+
+    # ── mode == "top50" ────────────────────────────────────
+    if not TOP50_PATH.exists():
+        raise FileNotFoundError(
+            f"top50_features.json not found: {TOP50_PATH}\n"
+            f"This is written by the v1 evaluation pipeline.\n"
+            f"Run v1 evaluate first, or switch FEATURE_MODE to 'all'."
+        )
+
+    with open(TOP50_PATH, "r") as f:
+        top50_data = json.load(f)
+
+    top50_raw = top50_data["features"]   # list of 50 feature names
+    logger.info(f"  Loaded {len(top50_raw)} top features from v1 model")
+
+    # Build final feature set: top50 raw + engineered + target
+    for name, df in splits.items():
+        target_cols = ["isFraud"] if "isFraud" in df.columns else []
+
+        # Filter top50 to only cols that exist in this split
+        available_raw = [c for c in top50_raw if c in df.columns]
+        missing_raw   = set(top50_raw) - set(available_raw)
+        if missing_raw:
+            logger.warning(
+                f"  [{name}] {len(missing_raw)} top50 cols not found "
+                f"in split: {sorted(missing_raw)}"
+            )
+
+        # Engineered cols that exist in this split
+        available_eng = [c for c in ENGINEERED_COLS if c in df.columns]
+
+        # Final column set — deduplicated, target last
+        keep_cols = list(dict.fromkeys(
+            available_raw + available_eng + target_cols
+        ))
+
+        splits[name] = df[keep_cols]
+        logger.info(
+            f"  [{name}] Selected {len(keep_cols)} cols "
+            f"({len(available_raw)} raw + "
+            f"{len(available_eng)} engineered"
+            + (f" + 1 target)" if target_cols else ")")
+        )
+
+    return splits
+
 
 # ══════════════════════════════════════════════════════════
-#  STEP 2 — IDENTIFY CATEGORICAL COLUMNS
+#  STEP 3 — IDENTIFY CATEGORICAL COLUMNS
 # ══════════════════════════════════════════════════════════
 
 def identify_cat_features(df: pd.DataFrame) -> list[str]:
-    """
-    Detects categorical columns by dtype (object or string).
-    Excludes isFraud (target column).
-    Returns sorted list of categorical column names.
-    """
+    """Detects categorical columns by dtype. Excludes isFraud."""
     cat_features = sorted([
         col for col in df.select_dtypes(include=["object", "string"]).columns
         if col != "isFraud"
@@ -116,7 +238,7 @@ def identify_cat_features(df: pd.DataFrame) -> list[str]:
 
 
 # ══════════════════════════════════════════════════════════
-#  STEP 3 — FILL CATEGORICAL NaN
+#  STEP 4 — FILL CATEGORICAL NaN
 # ══════════════════════════════════════════════════════════
 
 def fill_categorical_nulls(
@@ -124,19 +246,7 @@ def fill_categorical_nulls(
     cat_features: list[str],
     split_name: str,
 ) -> pd.DataFrame:
-    """
-    Fills NaN in categorical columns with CAT_NULL_FILL ("missing").
-
-    Why only categorical cols:
-      - Numeric NaN → CatBoost handles natively (no action needed)
-      - Categorical NaN → CatBoost raises error (string expected)
-
-    Logs null counts before and after for transparency.
-
-    Edge cases:
-      - cat_feature not in df → skips with warning
-      - Column already fully non-null → logs 0 filled, no change
-    """
+    """Fills NaN in categorical columns with 'missing'."""
     for col in cat_features:
         if col not in df.columns:
             logger.warning(
@@ -153,37 +263,20 @@ def fill_categorical_nulls(
                 f"NaN ({pct:.1f}%) → '{CAT_NULL_FILL}'"
             )
         else:
-            # Still cast to str to ensure consistent dtype
             df[col] = df[col].astype(str)
 
     return df
 
 
 # ══════════════════════════════════════════════════════════
-#  STEP 4 — CAST BINARY FLAG COLUMNS TO INT
+#  STEP 5 — CAST BINARY FLAG COLUMNS TO INT
 # ══════════════════════════════════════════════════════════
 
 def cast_binary_flags(
     df: pd.DataFrame,
     split_name: str,
 ) -> pd.DataFrame:
-    """
-    Ensures all binary engineered flag columns are int dtype.
-
-    Why: Some flag columns may be float (0.0/1.0/NaN) after
-    pandas read_csv or FE operations. CatBoost works with both
-    but int is cleaner and slightly more memory efficient.
-
-    Flag columns that may need casting:
-      is_weekend, is_high_risk_hour, id_data_present,
-      id_13_was_null, id_16_was_null, card1_is_high_freq,
-      amt_is_very_low, amt_is_high, card_device_is_high
-
-    Note: addr_is_unique and device_txn_count can be NaN
-    → These are NOT cast (would convert NaN to int error)
-    → Left as float — CatBoost handles numeric NaN natively
-    """
-    # Only cast cols that should be fully non-null binary flags
+    """Ensures binary flag columns are int dtype."""
     BINARY_FLAG_COLS = [
         "is_weekend",
         "is_high_risk_hour",
@@ -194,20 +287,19 @@ def cast_binary_flags(
         "amt_is_very_low",
         "amt_is_high",
         "card_device_is_high",
+        "amt_is_round",    # added — engineered binary flag
     ]
 
     cast_count = 0
     for col in BINARY_FLAG_COLS:
         if col not in df.columns:
-            continue  # silently skip — may not be in this split
-
+            continue
         if df[col].isna().any():
             logger.warning(
                 f"[{split_name}] Binary flag '{col}' has "
                 f"{df[col].isna().sum():,} NaN — skipping int cast"
             )
             continue
-
         if df[col].dtype != "int64":
             df[col] = df[col].astype(int)
             cast_count += 1
@@ -220,27 +312,18 @@ def cast_binary_flags(
 
 
 # ══════════════════════════════════════════════════════════
-#  STEP 5 — VALIDATE CATBOOST READINESS
+#  STEP 6 — VALIDATE CATBOOST READINESS
 # ══════════════════════════════════════════════════════════
 
 def validate_catboost_ready(
     splits: dict[str, pd.DataFrame],
     cat_features: list[str],
 ) -> None:
-    """
-    Final checks before saving:
-      1. No NaN remaining in categorical columns
-      2. Categorical columns are string dtype
-      3. Numeric columns have correct dtypes (float/int)
-      4. isFraud present in train/val, absent in test
-      5. Log full null report for numeric cols (informational)
-    """
+    """Final validation before saving."""
     logger.info("Validating CatBoost readiness ...")
     has_errors = False
 
     for name, df in splits.items():
-
-        # Check 1 & 2: categorical columns — no NaN, string dtype
         for col in cat_features:
             if col not in df.columns:
                 continue
@@ -248,7 +331,7 @@ def validate_catboost_ready(
             if null_count > 0:
                 logger.error(
                     f"[{name}] Categorical col '{col}' still has "
-                    f"{null_count:,} NaN after fill — CatBoost will error"
+                    f"{null_count:,} NaN — CatBoost will error"
                 )
                 has_errors = True
             if df[col].dtype not in ["object", "string"]:
@@ -258,19 +341,14 @@ def validate_catboost_ready(
                 )
                 has_errors = True
 
-        # Check 3: isFraud presence
         if name in ["train", "val"] and "isFraud" not in df.columns:
             logger.error(f"[{name}] isFraud missing — cannot train")
             has_errors = True
         if name == "test" and "isFraud" in df.columns:
-            logger.error(
-                "[test] isFraud found in test split — "
-                "should have been removed in build_enriched.py"
-            )
+            logger.error("[test] isFraud found in test split")
             has_errors = True
 
-        # Check 4: numeric null report (informational only)
-        num_cols = df.select_dtypes(include=["float64", "int64"]).columns
+        num_cols  = df.select_dtypes(include=["float64", "int64"]).columns
         num_nulls = {
             c: int(df[c].isna().sum())
             for c in num_cols
@@ -298,24 +376,18 @@ def validate_catboost_ready(
 
 
 # ══════════════════════════════════════════════════════════
-#  STEP 6 — SAVE CAT FEATURES LIST
+#  STEP 7 — SAVE CAT FEATURES LIST
 # ══════════════════════════════════════════════════════════
 
-def save_cat_features(cat_features: list[str]) -> None:
-    """
-    Saves categorical feature list to artifacts/catboost_cat_features.json.
-
-    Why save this separately:
-      - train_catboost.py loads this to pass to CatBoost Pool
-      - Scoring pipeline loads this for real-time inference
-      - Guarantees train/val/test use IDENTICAL cat_features list
-    """
+def save_cat_features(cat_features: list[str], mode: str) -> None:
+    """Saves categorical feature list + mode used to artifacts."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
     payload = {
         "cat_features":       cat_features,
         "cat_features_count": len(cat_features),
         "null_fill_value":    CAT_NULL_FILL,
+        "feature_mode":       mode,   # ← added for traceability
     }
 
     with open(CAT_FEATURES_PATH, "w") as f:
@@ -328,22 +400,25 @@ def save_cat_features(cat_features: list[str]) -> None:
 
 
 # ══════════════════════════════════════════════════════════
-#  STEP 7 — SAVE CATBOOST-READY SPLITS
+#  STEP 8 — SAVE CATBOOST-READY SPLITS
 # ══════════════════════════════════════════════════════════
 
-def save_catboost_splits(splits: dict[str, pd.DataFrame]) -> None:
+def save_catboost_splits(
+    splits: dict[str, pd.DataFrame],
+    mode: str,
+) -> None:
     """
-    Saves CatBoost-ready splits to data/versions/v2_catboost/.
-    Creates directory if it doesn't exist.
-    Writes a prep_manifest.json with shapes and dtype summary.
-    """
-    V2_DIR.mkdir(parents=True, exist_ok=True)
+    Saves CatBoost-ready splits to the correct output dir.
 
-    out_paths = {
-        "train": V2_TRAIN,
-        "val":   V2_VAL,
-        "test":  V2_TEST,
-    }
+    mode="all"   → data/versions/v2_catboost_all/
+    mode="top50" → data/versions/v2_catboost_top50/
+
+    Separate dirs guarantee the two strategies never overwrite
+    each other, so you can compare results at any time.
+    """
+    out_paths = OUTPUT_PATHS[mode]
+    out_dir   = out_paths["train"].parent
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = {}
     for name, df in splits.items():
@@ -351,9 +426,10 @@ def save_catboost_splits(splits: dict[str, pd.DataFrame]) -> None:
         df.to_csv(out_path, index=False)
 
         manifest[name] = {
-            "rows":       df.shape[0],
-            "cols":       df.shape[1],
-            "has_target": "isFraud" in df.columns,
+            "rows":         df.shape[0],
+            "cols":         df.shape[1],
+            "has_target":   "isFraud" in df.columns,
+            "feature_mode": mode,
             "dtypes": {
                 "object_cols": df.select_dtypes("object").columns.tolist(),
                 "float_cols":  df.select_dtypes("float64").columns.tolist(),
@@ -365,7 +441,7 @@ def save_catboost_splits(splits: dict[str, pd.DataFrame]) -> None:
             f"({df.shape[0]:,} rows × {df.shape[1]:,} cols)"
         )
 
-    manifest_path = V2_DIR / "prep_manifest.json"
+    manifest_path = out_dir / "prep_manifest.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
     logger.info(f"Prep manifest saved: {manifest_path}")
@@ -375,32 +451,48 @@ def save_catboost_splits(splits: dict[str, pd.DataFrame]) -> None:
 #  MAIN
 # ══════════════════════════════════════════════════════════
 
-def run_catboost_prep() -> list[str]:
+def run_catboost_prep(mode: str = FEATURE_MODE) -> list[str]:
     """
     Orchestrates all prep steps.
     Returns cat_features list for use by calling pipeline.
+
+    Args:
+        mode: "all" (default) or "top50"
+              Override FEATURE_MODE at the function call level
+              so v2_pipeline.py can pass it in explicitly.
     """
     start = time.time()
 
+    if mode not in ("all", "top50"):
+        raise ValueError(
+            f"mode must be 'all' or 'top50', got '{mode}'"
+        )
+
+    out_dir = OUTPUT_PATHS[mode]["train"].parent
+
     logger.info("=" * 60)
     logger.info("CATBOOST PREP — START")
-    logger.info(f"Input  : {ENRICHED_DIR}")
-    logger.info(f"Output : {V2_DIR}")
+    logger.info(f"Feature mode : {mode.upper()}")
+    logger.info(f"Input        : {ENRICHED_DIR}")
+    logger.info(f"Output       : {out_dir}")
     logger.info("=" * 60)
 
     try:
-        # Step 1 — Load enriched splits
+        # Step 1 — Load
         logger.info("\n[ Step 1 ] Loading enriched splits ...")
         splits = load_enriched_splits()
 
-        # Step 2 — Identify categorical features (from train)
-        # Use train to detect — consistent across all splits
-        logger.info("\n[ Step 2 ] Identifying categorical features ...")
+        # Step 2 — Feature selection by mode
+        logger.info("\n[ Step 2 ] Selecting features ...")
+        splits = select_features(splits, mode)
+
+        # Step 3 — Identify cat features (from train after selection)
+        logger.info("\n[ Step 3 ] Identifying categorical features ...")
         cat_features = identify_cat_features(splits["train"])
 
-        # Steps 3 & 4 — Fill cat NaN + cast binary flags (all splits)
+        # Steps 4 & 5 — Fill cat NaN + cast binary flags
         logger.info(
-            "\n[ Steps 3-4 ] Filling categorical NaN + "
+            "\n[ Steps 4-5 ] Filling categorical NaN + "
             "casting binary flags ..."
         )
         for name in SPLITS:
@@ -409,21 +501,24 @@ def run_catboost_prep() -> list[str]:
             )
             splits[name] = cast_binary_flags(splits[name], name)
 
-        # Step 5 — Validate
-        logger.info("\n[ Step 5 ] Validating CatBoost readiness ...")
+        # Step 6 — Validate
+        logger.info("\n[ Step 6 ] Validating CatBoost readiness ...")
         validate_catboost_ready(splits, cat_features)
 
-        # Step 6 — Save cat features list
-        logger.info("\n[ Step 6 ] Saving cat_features list ...")
-        save_cat_features(cat_features)
+        # Step 7 — Save cat features
+        logger.info("\n[ Step 7 ] Saving cat_features list ...")
+        save_cat_features(cat_features, mode)
 
-        # Step 7 — Save splits
-        logger.info("\n[ Step 7 ] Saving CatBoost-ready splits ...")
-        save_catboost_splits(splits)
+        # Step 8 — Save splits
+        logger.info("\n[ Step 8 ] Saving CatBoost-ready splits ...")
+        save_catboost_splits(splits, mode)
 
         elapsed = time.time() - start
         logger.info("=" * 60)
-        logger.info(f"CATBOOST PREP — COMPLETE ({elapsed:.1f}s)")
+        logger.info(
+            f"CATBOOST PREP — COMPLETE ({elapsed:.1f}s) | "
+            f"mode={mode.upper()}"
+        )
         logger.info("=" * 60)
 
         return cat_features

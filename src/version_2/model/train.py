@@ -45,6 +45,8 @@ from src.utils.data_configs import (
     V2_VAL,
     ARTIFACTS,
     V2_RESULT,
+    V2_ALL_TRAIN,
+    V2_ALL_VAL  
 )
 
 logger = get_logger(__name__)
@@ -57,6 +59,8 @@ MODEL_PATH         = RESULT_DIR / "model.cbm"
 METRICS_PATH       = RESULT_DIR / "metrics.json"
 FI_PATH            = RESULT_DIR / "feature_importance.json"
 BEST_PARAMS_PATH   = RESULT_DIR / "best_params.json"
+V2_ALL_RESULT = V2_RESULT/"result_all"
+
 
 # ── Training constants ─────────────────────────────────────
 RANDOM_SEED        = 42
@@ -77,7 +81,7 @@ def load_splits() -> tuple[pd.DataFrame, pd.DataFrame]:
     Validates files exist, are non-empty, and have the target column.
     Returns (train_df, val_df).
     """
-    for path in [V2_TRAIN, V2_VAL]:
+    for path in [V2_ALL_TRAIN, V2_ALL_VAL]:
         if not path.exists():
             raise FileNotFoundError(
                 f"Split not found: {path}\n"
@@ -85,8 +89,8 @@ def load_splits() -> tuple[pd.DataFrame, pd.DataFrame]:
             )
 
     logger.info("Loading CatBoost-ready splits ...")
-    train = pd.read_csv(V2_TRAIN)
-    val   = pd.read_csv(V2_VAL)
+    train = pd.read_csv(V2_ALL_TRAIN)
+    val   = pd.read_csv(V2_ALL_VAL)
 
     for name, df in [("train", train), ("val", val)]:
         if TARGET_COL not in df.columns:
@@ -469,8 +473,8 @@ def run_training() -> dict:
 
     logger.info("=" * 60)
     logger.info("CATBOOST TRAINING — START")
-    logger.info(f"Train data : {V2_TRAIN}")
-    logger.info(f"Val data   : {V2_VAL}")
+    logger.info(f"Train data : {V2_ALL_TRAIN}")
+    logger.info(f"Val data   : {V2_ALL_VAL}")
     logger.info(f"Results    : {RESULT_DIR}")
     logger.info(f"Optuna trials: {OPTUNA_TRIALS}")
     logger.info("=" * 60)

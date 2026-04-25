@@ -33,6 +33,11 @@ V2_VAL  = ROOT / "data/versions/v2_catboost/val.csv"
 V2_RESULT = ROOT / "src/version_2/result" 
 V2_MODEL   = ROOT / "src/version_2/model"
 
+# ── NEW — all features mode ────────────────────────────────
+V2_ALL_TRAIN = ROOT / "data/versions/v2_catboost/all/train.csv"
+V2_ALL_VAL   = ROOT / "data/versions/v2_catboost/all/val.csv"
+V2_ALL_TEST  = ROOT / "data/versions/v2_catboost/all/test.csv"
+
 # Data
 ENRICHED = ROOT / "data/enriched"
 
