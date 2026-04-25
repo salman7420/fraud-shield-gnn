@@ -50,7 +50,6 @@ from src.utils.data_configs import (
     V2_VAL,
     ARTIFACTS,
     V2_RESULT,
-    V2_ALL_RESULT,
     V2_ALL_VAL
 )
 
