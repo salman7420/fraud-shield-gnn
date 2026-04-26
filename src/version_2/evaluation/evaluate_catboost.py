@@ -50,6 +50,7 @@ from src.utils.data_configs import (
     V2_VAL,
     ARTIFACTS,
     V2_RESULT,
+    V2_ALL_VAL
 )
 
 logger = get_logger(__name__)
@@ -105,12 +106,12 @@ def load_model_and_data() -> tuple:
         cat_features = json.load(f)["cat_features"]
 
     # ── Val data ───────────────────────────────────────────
-    if not V2_VAL.exists():
+    if not V2_ALL_VAL.exists():
         raise FileNotFoundError(
             f"Val split not found: {V2_VAL}\n"
             f"Run catboost_prep.py first."
         )
-    val = pd.read_csv(V2_VAL)
+    val = pd.read_csv(V2_ALL_VAL)
     logger.info(
         f"Val set loaded: {val.shape[0]:,} rows × {val.shape[1]:,} cols | "
         f"fraud rate: {val['isFraud'].mean()*100:.2f}%"
@@ -485,7 +486,7 @@ def run_evaluation() -> dict:
     logger.info("=" * 60)
     logger.info("CATBOOST EVALUATION — START")
     logger.info(f"Model   : {MODEL_PATH}")
-    logger.info(f"Val set : {V2_VAL}")
+    logger.info(f"Val set : {V2_ALL_VAL}")
     logger.info(f"Plots   : {PLOTS_DIR}")
     logger.info("=" * 60)
 

@@ -46,7 +46,7 @@ def main() -> None:
         logger.info("─" * 60)
         t = time.time()
 
-        run_catboost_prep()
+        run_catboost_prep(mode="all")
 
         timings["catboost_prep"] = round(time.time() - t, 1)
         logger.info(
