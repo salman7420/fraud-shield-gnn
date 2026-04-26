@@ -1,14 +1,14 @@
 {
-  "auc_roc": 0.86882,
-  "auprc": 0.51764,
-  "f1": 0.53313,
-  "precision": 0.64637,
-  "recall": 0.45365,
+  "auc_roc": 0.85786,
+  "auprc": 0.47058,
+  "f1": 0.30525,
+  "precision": 0.20016,
+  "recall": 0.64267,
   "confusion_matrix": {
-    "TP": 1380,
-    "FP": 755,
-    "TN": 84784,
-    "FN": 1662
+    "TP": 1955,
+    "FP": 7812,
+    "TN": 77727,
+    "FN": 1087
   },
   "threshold": 0.5,
   "val_rows": 88581,
